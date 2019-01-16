@@ -91,7 +91,7 @@ metadata:
     ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   rules:
-  - host: grocy.waifu.plus
+  - host: grocy.anal.dog
     http:
       paths:
       - path: /
