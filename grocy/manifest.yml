@@ -1,0 +1,142 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grocy
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: grocy
+  namespace: grocy
+  labels:
+    app: grocy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grocy
+  template:
+    metadata:
+      labels:
+        app: grocy
+    spec:
+      volumes:
+      - name: nginx-config-volume
+        configMap:
+          name: grocy-nginx-config
+      - name: grocy-volume
+        persistentVolumeClaim:
+          claimName: grocy-pvc
+      containers:
+      - name: grocy
+        image: chazu/grocy:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9000
+        volumeMounts:
+        - name: grocy-volume
+          mountPath: /opt
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/sh", "-c", "cp -ra /app/. /opt/"]
+ 
+      - name: nginx
+        image: nginx:1.7.9
+        volumeMounts:
+          - name: grocy-volume
+            mountPath: /opt
+          - name: nginx-config-volume
+            mountPath: /etc/nginx/nginx.conf
+            subPath: nginx.conf
+
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grocy-pvc
+  namespace: grocy
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grocy-service
+  namespace: grocy
+spec:
+  selector:
+    app: grocy
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: grocy-ingress
+  namespace: grocy
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+  - host: grocy.waifu.plus
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: grocy-service
+          servicePort: 80
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: grocy-nginx-config
+  namespace: grocy
+data:
+  nginx.conf: |
+    events {
+    }
+    http {
+        include mime.types;    
+    	gzip_types text/plain application/x-javascript text/xml text/css application/xml;
+
+      server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+        
+        # Set nginx to serve files from the shared volume!
+        root /opt/public;
+
+        charset utf-8;        
+        index index.php index.html index.htm
+
+        server_name _;
+        location / {
+          try_files $uri $uri/ /index.php?$query_string;
+        }
+        location ~* .(jpg|jpeg|png|gif|ico|css|js)$ {
+          expires 365d;
+        }
+
+        location ~ \.php$ {
+          include fastcgi_params;
+          fastcgi_index index.php;
+          fastcgi_param REQUEST_METHOD $request_method;
+          fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+          fastcgi_pass 127.0.0.1:9000;
+        }
+      }
+    }
